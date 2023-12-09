@@ -127,10 +127,12 @@ func WatchPath(watcher *fsnotify.Watcher, path string) {
 					return
 				}
 				if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
-					log.Println("event", event.Name)
+					if !containsIgnorePath(event.Name, "__pycache__") {
+						log.Println("event", event.Name)
 
-					// Run the bot in a separate goroutine.
-					go RunBot("main.py")
+						// Run the bot in a separate goroutine.
+						go RunBot("main.py")
+					}
 				}
 
 			case err, ok := <-watcher.Errors:
