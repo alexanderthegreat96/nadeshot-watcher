@@ -36,7 +36,7 @@ func WatcherWatchPath(w *watcher.Watcher, path string) {
 		for {
 			select {
 			case event := <-w.Event:
-				if event.Op&watcher.Write == watcher.Write {
+				if event.Op&(watcher.Write|watcher.Remove) != 0 {
 					if !containsIgnorePath(event.Path, "__pycache__") {
 						log.Println("Event:", event)
 						go RunBot("main.py")
@@ -64,7 +64,7 @@ func RunBot(scriptPath string) {
 	defer mu.Unlock()
 
 	if isBotRunning {
-		log.Println("Restarting the previous bot instance.")
+		log.Println("Restarting the previous app instance.")
 		cancel()
 	}
 
@@ -126,7 +126,7 @@ func WatchPath(watcher *fsnotify.Watcher, path string) {
 				if !ok {
 					return
 				}
-				if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
+				if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove) != 0 {
 					if !containsIgnorePath(event.Name, "__pycache__") {
 						log.Println("event", event.Name)
 
@@ -159,4 +159,23 @@ func containsIgnorePath(path, ignorePath string) bool {
 	}
 
 	return strings.HasPrefix(absPath, absIgnorePath)
+}
+
+// check if main.py is found
+func FileExists(filePath string) (bool, error) {
+	_, err := os.Stat(filePath)
+	if err == nil {
+		return true, nil
+	} else if os.IsNotExist(err) {
+		return false, nil
+	} else {
+		return false, err
+	}
+}
+
+// check if python is installed
+func IsPythonInstalled() bool {
+	cmd := exec.Command("python", "--version")
+	err := cmd.Run()
+	return err == nil
 }

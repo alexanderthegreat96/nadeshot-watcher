@@ -10,28 +10,51 @@ import (
 )
 
 func main() {
-	go functions.RunBot("main.py")
-	w := watcher.New()
-
-	// Set options
-	w.SetMaxEvents(1)
-	w.FilterOps(watcher.Write)
-
-	currentPath, err := os.Getwd()
-	if err != nil {
-		fmt.Println("Error getting current working directory:", err)
-		fmt.Println("Press ENTER to exit...")
-		fmt.Scanln()
-		return
-	}
-	functions.WatcherWatchPath(w, currentPath)
-
 	myFigure := figure.NewColorFigure("Nadeshot Watcher", "", "green", true)
 	myFigure.Print()
+	fmt.Println()
 
-	fmt.Println("\nStarting bot...")
+	if functions.IsPythonInstalled() {
 
-	fmt.Println("Listening for file system changes in:", currentPath)
+		found, notFoundMain := functions.FileExists("main.py")
 
-	select {}
+		if notFoundMain != nil {
+			fmt.Printf("Unable to run app entrypoint: main.py\nError: %s\n", notFoundMain.Error())
+			fmt.Println("Press ENTER to exit...")
+			fmt.Scanln()
+			return
+		}
+
+		if found {
+			currentPath, err := os.Getwd()
+			if err != nil {
+				fmt.Println("Error getting current working directory:", err)
+				fmt.Println("Press ENTER to exit...")
+				fmt.Scanln()
+				return
+			}
+
+			go functions.RunBot("main.py")
+			w := watcher.New()
+
+			w.SetMaxEvents(1)
+			w.FilterOps(watcher.Write)
+
+			functions.WatcherWatchPath(w, currentPath)
+
+			fmt.Println("\nStarting app...")
+			fmt.Println("Listening for file system changes in:", currentPath)
+
+			select {}
+		} else {
+			fmt.Println("App entrypoint: main.py was not found. Canceling...")
+			fmt.Println("Press ENTER to exit...")
+			fmt.Scanln()
+		}
+	} else {
+		fmt.Println("No python environment found. Please install it and re-run the program.")
+		fmt.Println("Press ENTER to exit...")
+		fmt.Scanln()
+	}
+
 }
