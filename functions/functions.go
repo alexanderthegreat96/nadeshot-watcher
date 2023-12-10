@@ -71,7 +71,7 @@ func RunBot(scriptPath string) {
 	ctx, cancel = context.WithCancel(context.Background())
 
 	go func() {
-		cmd := exec.CommandContext(ctx, "python", scriptPath)
+		cmd := exec.CommandContext(ctx, "python", "-B", scriptPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
