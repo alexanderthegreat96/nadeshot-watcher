@@ -24,7 +24,7 @@ var (
 
 // uses watcher and doesn't rely on FS events
 // for docker usage obviosly
-func WatcherWatchPath(w *watcher.Watcher, path string) {
+func WatcherWatchPath(w *watcher.Watcher, path string, bootFile string) {
 	// Add the current path.
 	if err := w.AddRecursive(path); err != nil {
 		log.Fatal(err)
@@ -39,7 +39,7 @@ func WatcherWatchPath(w *watcher.Watcher, path string) {
 				if event.Op&(watcher.Write|watcher.Remove) != 0 {
 					if !containsIgnorePath(event.Path, "__pycache__") {
 						log.Println("Event:", event)
-						go RunBot("main.py")
+						go RunApp(bootFile)
 					}
 				}
 			case err := <-w.Error:
@@ -59,7 +59,8 @@ func WatcherWatchPath(w *watcher.Watcher, path string) {
 	}
 
 }
-func RunBot(scriptPath string) {
+
+func RunApp(scriptPath string) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -81,7 +82,7 @@ func RunBot(scriptPath string) {
 			log.Printf("Previous instance stopped...")
 		}
 
-		// The bot has finished running.
+		// the app has finished running.
 		mu.Lock()
 		defer mu.Unlock()
 		isBotRunning = true
@@ -90,7 +91,7 @@ func RunBot(scriptPath string) {
 	isBotRunning = true
 }
 
-func WatchPath(watcher *fsnotify.Watcher, path string) {
+func WatchPath(watcher *fsnotify.Watcher, path string, bootFile string) {
 	// Add the current path.
 	err := watcher.Add(path)
 	if err != nil {
@@ -130,8 +131,8 @@ func WatchPath(watcher *fsnotify.Watcher, path string) {
 					if !containsIgnorePath(event.Name, "__pycache__") {
 						log.Println("event", event.Name)
 
-						// Run the bot in a separate goroutine.
-						go RunBot("main.py")
+						// Run the app in a separate goroutine.
+						go RunApp(bootFile)
 					}
 				}
 
@@ -178,4 +179,45 @@ func IsPythonInstalled() bool {
 	cmd := exec.Command("python", "--version")
 	err := cmd.Run()
 	return err == nil
+}
+
+// used for checking if a custom boot file is present
+func CustomBootFileDefined() (fileName string, isDefined bool) {
+	hasInitFile, hasInitFileErr := FileExists("watcher.ini")
+
+	if hasInitFileErr != nil {
+		log.Printf("error checking for init file: watcher.ini. %s", hasInitFileErr.Error())
+		return "", false
+	} else {
+		if hasInitFile {
+			file, fileErr := os.ReadFile("watcher.ini")
+
+			if fileErr != nil {
+				log.Printf("error opening watcher.ini. %s", fileErr.Error())
+				return "", false
+			} else {
+				data := strings.TrimSpace(string(file))
+				if len(data) > 0 {
+					extension := getLastNCharacters(data, 3)
+					if extension == ".py" {
+						return data, true
+					}
+					return "", false
+				}
+				return "", false
+			}
+		} else {
+			return "", false
+		}
+	}
+}
+
+// used for handling extensions
+func getLastNCharacters(s string, n int) string {
+	if n > len(s) {
+		n = len(s)
+	}
+
+	lastN := s[len(s)-n:]
+	return lastN
 }

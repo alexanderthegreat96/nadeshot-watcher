@@ -16,10 +16,17 @@ func main() {
 
 	if functions.IsPythonInstalled() {
 
-		found, notFoundMain := functions.FileExists("main.py")
+		mainFile := "main.py"
+		customFile, isDefined := functions.CustomBootFileDefined()
+
+		if isDefined {
+			mainFile = customFile
+		}
+
+		found, notFoundMain := functions.FileExists(mainFile)
 
 		if notFoundMain != nil {
-			fmt.Printf("Unable to run app entrypoint: main.py\nError: %s\n", notFoundMain.Error())
+			fmt.Printf("Unable to run app entrypoint: %s\nError: %s\n", mainFile, notFoundMain.Error())
 			fmt.Println("Press ENTER to exit...")
 			fmt.Scanln()
 			return
@@ -34,20 +41,20 @@ func main() {
 				return
 			}
 
-			go functions.RunBot("main.py")
+			go functions.RunApp(mainFile)
 			w := watcher.New()
 
 			w.SetMaxEvents(1)
 			w.FilterOps(watcher.Write)
 
-			functions.WatcherWatchPath(w, currentPath)
+			functions.WatcherWatchPath(w, currentPath, mainFile)
 
 			fmt.Println("\nStarting app...")
 			fmt.Println("Listening for file system changes in:", currentPath)
 
 			select {}
 		} else {
-			fmt.Println("App entrypoint: main.py was not found. Canceling...")
+			fmt.Println("App entrypoint: " + mainFile + " was not found. Canceling...")
 			fmt.Println("Press ENTER to exit...")
 			fmt.Scanln()
 		}

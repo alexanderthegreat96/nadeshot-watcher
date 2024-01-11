@@ -1,6 +1,8 @@
 ## Nadeshot Watcher
-Self-Restarting Python Script / Bot Tool
+Self-Restarting Python Appplication Development Tool. To simply put it, it aids with real-time python development.
 
+### Demo
+![Alt text](demo.png)
 ### Why?
 I was looking for an efficient way to restart my real-time running apps while I was doing changes to the source code. There are a lot of opinions of what to use, but none come as a 1 exe file that does that for you.
 
@@ -16,6 +18,11 @@ Simple, if you use Docker, it doesn't like file system events, instead of using 
 
 This program is part of [Discord Nadeshot](https://github.com/alexanderthegreat96/discord-nadeshot), my discord bot framework.
 
-#### Important, by default the program looks for main.py, if you use a difference start up script, then  compile it yourself and change the main.py in the main.go files. 
+#### Configuring a different start-up file than main.py
+In the application directory, create a new file called: watcher.ini
+```text
+my-script.py
+```
+Now the watcher is always rebooting my-script.py
 
 #### No licence, EVERYONE IS FREE!!!
