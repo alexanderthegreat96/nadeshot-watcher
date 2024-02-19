@@ -61,6 +61,17 @@ func WatcherWatchPath(w *watcher.Watcher, path string, bootFile string) {
 }
 
 func RunApp(scriptPath string) {
+
+	exePath, err := os.Executable()
+	if err != nil {
+		fmt.Printf("Error getting executable path: %s\n", err)
+		return
+	}
+
+	exeDir := filepath.Dir(exePath)
+
+	mainPath := filepath.Join(exeDir, scriptPath)
+
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -72,7 +83,7 @@ func RunApp(scriptPath string) {
 	ctx, cancel = context.WithCancel(context.Background())
 
 	go func() {
-		cmd := exec.CommandContext(ctx, "python", "-B", scriptPath)
+		cmd := exec.CommandContext(ctx, "python", "-B", mainPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 

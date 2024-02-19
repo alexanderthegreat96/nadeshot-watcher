@@ -5,12 +5,23 @@ import (
 	"log"
 	"os"
 
+	"path/filepath"
+
 	"github.com/alexanderthegreat96/nadeshot-watcher/functions"
 	"github.com/common-nighthawk/go-figure"
 	"github.com/fsnotify/fsnotify"
 )
 
 func main() {
+
+	exePath, err := os.Executable()
+	if err != nil {
+		fmt.Printf("Error getting executable path: %s\n", err)
+		return
+	}
+
+	exeDir := filepath.Dir(exePath)
+
 	myFigure := figure.NewColorFigure("Nadeshot Watcher", "", "green", true)
 	myFigure.Print()
 	fmt.Println()
@@ -24,7 +35,9 @@ func main() {
 			mainFile = customFile
 		}
 
-		found, notFoundMain := functions.FileExists(mainFile)
+		mainFilePath := filepath.Join(exeDir, mainFile)
+
+		found, notFoundMain := functions.FileExists(mainFilePath)
 		if notFoundMain != nil {
 			fmt.Printf("Unable to run app entrypoint: %s\nError: %s\n", mainFile, notFoundMain.Error())
 			fmt.Println("Press ENTER to exit...")
@@ -41,18 +54,18 @@ func main() {
 			}
 			defer watcher.Close()
 
-			currentPath, err := os.Getwd()
-			if err != nil {
-				fmt.Println("Error getting current working directory:", err)
-				fmt.Println("Press ENTER to exit...")
-				fmt.Scanln()
-				return
-			}
+			// currentPath, err := os.Getwd()
+			// if err != nil {
+			// 	fmt.Println("Error getting current working directory:", err)
+			// 	fmt.Println("Press ENTER to exit...")
+			// 	fmt.Scanln()
+			// 	return
+			// }
 
-			functions.WatchPath(watcher, currentPath, mainFile)
+			functions.WatchPath(watcher, exeDir, mainFile)
 
 			fmt.Println("\nStarting app...")
-			fmt.Println("Listening for file system changes in:", currentPath)
+			fmt.Println("Listening for file system changes in:", exeDir)
 
 			functions.RunApp(mainFile)
 			<-make(chan struct{})

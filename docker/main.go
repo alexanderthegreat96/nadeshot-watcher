@@ -7,9 +7,20 @@ import (
 	"github.com/alexanderthegreat96/nadeshot-watcher/functions"
 	"github.com/common-nighthawk/go-figure"
 	"github.com/radovskyb/watcher"
+
+	"path/filepath"
 )
 
 func main() {
+
+	exePath, err := os.Executable()
+	if err != nil {
+		fmt.Printf("Error getting executable path: %s\n", err)
+		return
+	}
+
+	exeDir := filepath.Dir(exePath)
+
 	myFigure := figure.NewColorFigure("Nadeshot Watcher", "", "green", true)
 	myFigure.Print()
 	fmt.Println()
@@ -22,8 +33,8 @@ func main() {
 		if isDefined {
 			mainFile = customFile
 		}
-
-		found, notFoundMain := functions.FileExists(mainFile)
+		mainFilePath := filepath.Join(exeDir, mainFile)
+		found, notFoundMain := functions.FileExists(mainFilePath)
 
 		if notFoundMain != nil {
 			fmt.Printf("Unable to run app entrypoint: %s\nError: %s\n", mainFile, notFoundMain.Error())
@@ -33,24 +44,16 @@ func main() {
 		}
 
 		if found {
-			currentPath, err := os.Getwd()
-			if err != nil {
-				fmt.Println("Error getting current working directory:", err)
-				fmt.Println("Press ENTER to exit...")
-				fmt.Scanln()
-				return
-			}
-
 			go functions.RunApp(mainFile)
 			w := watcher.New()
 
 			w.SetMaxEvents(1)
 			w.FilterOps(watcher.Write)
 
-			functions.WatcherWatchPath(w, currentPath, mainFile)
+			functions.WatcherWatchPath(w, exeDir, mainFile)
 
 			fmt.Println("\nStarting app...")
-			fmt.Println("Listening for file system changes in:", currentPath)
+			fmt.Println("Listening for file system changes in:", exeDir)
 
 			select {}
 		} else {
