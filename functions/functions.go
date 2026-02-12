@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/alexanderthegreat96/nadeshot-watcher/config"
@@ -26,6 +25,7 @@ type AppRunner struct {
 	isRunning    bool
 	lastRestart  time.Time
 	shutdownOnce sync.Once
+	doneCh       chan struct{} // signals when process has exited
 }
 
 func NewAppRunner(cfg *config.Config) *AppRunner {
@@ -45,17 +45,26 @@ func (r *AppRunner) RunApp() {
 	if r.isRunning && r.cancel != nil {
 		log.Println("Restarting the previous app instance...")
 		r.cancel()
-		time.Sleep(100 * time.Millisecond)
+
+		// Wait for the old process to actually exit
+		if r.doneCh != nil {
+			r.mu.Unlock()
+			<-r.doneCh
+			r.mu.Lock()
+		}
 	}
 
 	r.ctx, r.cancel = context.WithCancel(context.Background())
+	r.doneCh = make(chan struct{})
 	r.lastRestart = time.Now()
 	r.isRunning = true
 
-	go r.runProcess()
+	go r.runProcess(r.ctx, r.doneCh)
 }
 
-func (r *AppRunner) runProcess() {
+func (r *AppRunner) runProcess(ctx context.Context, doneCh chan struct{}) {
+	defer close(doneCh)
+
 	mainPath := r.cfg.BootFilePath()
 
 	args := make([]string, 0, len(r.cfg.PythonArgs)+1+len(r.cfg.ScriptArgs))
@@ -63,14 +72,20 @@ func (r *AppRunner) runProcess() {
 	args = append(args, mainPath)
 	args = append(args, r.cfg.ScriptArgs...)
 
-	cmd := exec.CommandContext(r.ctx, r.cfg.PythonCommand, args...)
+	cmd := exec.CommandContext(ctx, r.cfg.PythonCommand, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Dir = r.cfg.ExeDir
 
+	// Go 1.20+ context cancelation requires you to specify it
+	cmd.Cancel = func() error {
+		log.Println("Killing process...")
+		return cmd.Process.Kill()
+	}
+
 	err := cmd.Run()
 	if err != nil {
-		if r.ctx.Err() == nil {
+		if ctx.Err() == nil {
 			log.Printf("App exited with error: %v", err)
 		} else {
 			log.Println("Previous instance stopped.")
@@ -87,8 +102,8 @@ func (r *AppRunner) Shutdown() {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 
+		log.Println("Shutting down application...")
 		if r.cancel != nil {
-			log.Println("Shutting down application...")
 			r.cancel()
 		}
 	})
@@ -96,7 +111,7 @@ func (r *AppRunner) Shutdown() {
 
 func (r *AppRunner) SetupSignalHandler() {
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, os.Interrupt)
 
 	go func() {
 		sig := <-sigChan
