@@ -22,10 +22,10 @@ type AppRunner struct {
 	mu           sync.Mutex
 	ctx          context.Context
 	cancel       context.CancelFunc
-	cmd          *exec.Cmd
 	isRunning    bool
 	lastRestart  time.Time
 	shutdownOnce sync.Once
+	doneCh       chan struct{} // signals when process has exited
 }
 
 func NewAppRunner(cfg *config.Config) *AppRunner {
@@ -42,30 +42,29 @@ func (r *AppRunner) RunApp() {
 		return
 	}
 
-	if r.isRunning && r.cmd != nil && r.cmd.Process != nil {
+	if r.isRunning && r.cancel != nil {
 		log.Println("Restarting the previous app instance...")
+		r.cancel()
 
-		// Cancel context first to signal the process to stop
-		if r.cancel != nil {
-			r.cancel()
+		// Wait for the old process to actually exit
+		if r.doneCh != nil {
+			r.mu.Unlock()
+			<-r.doneCh
+			r.mu.Lock()
 		}
-
-		// Kill the process tree
-		killProcessTree(r.cmd)
-
-		// Mark as not running
-		r.isRunning = false
-		r.cmd = nil
 	}
 
 	r.ctx, r.cancel = context.WithCancel(context.Background())
+	r.doneCh = make(chan struct{})
 	r.lastRestart = time.Now()
 	r.isRunning = true
 
-	go r.runProcess()
+	go r.runProcess(r.ctx, r.doneCh)
 }
 
-func (r *AppRunner) runProcess() {
+func (r *AppRunner) runProcess(ctx context.Context, doneCh chan struct{}) {
+	defer close(doneCh)
+
 	mainPath := r.cfg.BootFilePath()
 
 	args := make([]string, 0, len(r.cfg.PythonArgs)+1+len(r.cfg.ScriptArgs))
@@ -73,22 +72,20 @@ func (r *AppRunner) runProcess() {
 	args = append(args, mainPath)
 	args = append(args, r.cfg.ScriptArgs...)
 
-	cmd := exec.CommandContext(r.ctx, r.cfg.PythonCommand, args...)
+	cmd := exec.CommandContext(ctx, r.cfg.PythonCommand, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Dir = r.cfg.ExeDir
 
-	// Set platform-specific process attributes for process tree management
-	setPlatformProcessAttrs(cmd)
-
-	// Store cmd reference for process tree killing
-	r.mu.Lock()
-	r.cmd = cmd
-	r.mu.Unlock()
+	// Go 1.20+ context cancelation requires you to specify it
+	cmd.Cancel = func() error {
+		log.Println("Killing process...")
+		return cmd.Process.Kill()
+	}
 
 	err := cmd.Run()
 	if err != nil {
-		if r.ctx.Err() == nil {
+		if ctx.Err() == nil {
 			log.Printf("App exited with error: %v", err)
 		} else {
 			log.Println("Previous instance stopped.")
@@ -97,7 +94,6 @@ func (r *AppRunner) runProcess() {
 
 	r.mu.Lock()
 	r.isRunning = false
-	r.cmd = nil
 	r.mu.Unlock()
 }
 
@@ -107,9 +103,6 @@ func (r *AppRunner) Shutdown() {
 		defer r.mu.Unlock()
 
 		log.Println("Shutting down application...")
-		if r.cmd != nil && r.cmd.Process != nil {
-			killProcessTree(r.cmd)
-		}
 		if r.cancel != nil {
 			r.cancel()
 		}
