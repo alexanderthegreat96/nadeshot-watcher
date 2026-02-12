@@ -6,122 +6,125 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
-	"strings"
 	"sync"
+	"syscall"
+	"time"
 
+	"github.com/alexanderthegreat96/nadeshot-watcher/config"
 	"github.com/fsnotify/fsnotify"
 	"github.com/radovskyb/watcher"
 )
 
-var (
+type AppRunner struct {
+	cfg *config.Config
+
 	mu           sync.Mutex
-	isBotRunning bool
 	ctx          context.Context
 	cancel       context.CancelFunc
-	stopCh       chan struct{}
-)
-
-// uses watcher and doesn't rely on FS events
-// for docker usage obviosly
-func WatcherWatchPath(w *watcher.Watcher, path string, bootFile string) {
-	// Add the current path.
-	if err := w.AddRecursive(path); err != nil {
-		log.Fatal(err)
-		return
-	}
-
-	// Start the watcher
-	go func() {
-		for {
-			select {
-			case event := <-w.Event:
-				if event.Op&(watcher.Write|watcher.Remove) != 0 {
-					if !containsIgnorePath(event.Path, "__pycache__") {
-						log.Println("Event:", event)
-						go RunApp(bootFile)
-					}
-				}
-			case err := <-w.Error:
-				log.Println("Error:", err)
-			case <-w.Closed:
-				return
-			}
-		}
-	}()
-
-	// Start the watcher
-	if err := w.Start(1); err != nil {
-		fmt.Println("Error starting watcher:", err)
-		fmt.Println("Press ENTER to exit...")
-		fmt.Scanln()
-		os.Exit(1)
-	}
-
+	isRunning    bool
+	lastRestart  time.Time
+	shutdownOnce sync.Once
 }
 
-func RunApp(scriptPath string) {
-
-	exePath, err := os.Executable()
-	if err != nil {
-		fmt.Printf("Error getting executable path: %s\n", err)
-		return
+func NewAppRunner(cfg *config.Config) *AppRunner {
+	return &AppRunner{
+		cfg: cfg,
 	}
-
-	exeDir := filepath.Dir(exePath)
-
-	mainPath := filepath.Join(exeDir, scriptPath)
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	if isBotRunning {
-		log.Println("Restarting the previous app instance.")
-		cancel()
-	}
-
-	ctx, cancel = context.WithCancel(context.Background())
-
-	go func() {
-		cmd := exec.CommandContext(ctx, "python", "-B", mainPath)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		err := cmd.Run()
-		if err != nil {
-			//log.Printf("Error running bot: %v", err)
-			log.Printf("Previous instance stopped...")
-		}
-
-		// the app has finished running.
-		mu.Lock()
-		defer mu.Unlock()
-		isBotRunning = true
-	}()
-
-	isBotRunning = true
 }
 
-func WatchPath(watcher *fsnotify.Watcher, path string, bootFile string) {
-	// Add the current path.
-	err := watcher.Add(path)
-	if err != nil {
-		log.Fatal(err)
-		fmt.Println("Press ENTER to exit...")
-		fmt.Scanln()
+func (r *AppRunner) RunApp() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if time.Since(r.lastRestart) < time.Duration(r.cfg.DebounceMs)*time.Millisecond {
 		return
 	}
 
-	err = filepath.Walk(path, func(subpath string, info os.FileInfo, err error) error {
+	if r.isRunning && r.cancel != nil {
+		log.Println("Restarting the previous app instance...")
+		r.cancel()
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	r.ctx, r.cancel = context.WithCancel(context.Background())
+	r.lastRestart = time.Now()
+	r.isRunning = true
+
+	go r.runProcess()
+}
+
+func (r *AppRunner) runProcess() {
+	mainPath := r.cfg.BootFilePath()
+
+	args := make([]string, 0, len(r.cfg.PythonArgs)+1+len(r.cfg.ScriptArgs))
+	args = append(args, r.cfg.PythonArgs...)
+	args = append(args, mainPath)
+	args = append(args, r.cfg.ScriptArgs...)
+
+	cmd := exec.CommandContext(r.ctx, r.cfg.PythonCommand, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir = r.cfg.ExeDir
+
+	err := cmd.Run()
+	if err != nil {
+		if r.ctx.Err() == nil {
+			log.Printf("App exited with error: %v", err)
+		} else {
+			log.Println("Previous instance stopped.")
+		}
+	}
+
+	r.mu.Lock()
+	r.isRunning = false
+	r.mu.Unlock()
+}
+
+func (r *AppRunner) Shutdown() {
+	r.shutdownOnce.Do(func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+
+		if r.cancel != nil {
+			log.Println("Shutting down application...")
+			r.cancel()
+		}
+	})
+}
+
+func (r *AppRunner) SetupSignalHandler() {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigChan
+		log.Printf("Received signal: %v", sig)
+		r.Shutdown()
+		os.Exit(0)
+	}()
+}
+
+func WatchRegular(cfg *config.Config, runner *AppRunner) error {
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("failed to create watcher: %w", err)
+	}
+
+	if err := w.Add(cfg.ExeDir); err != nil {
+		return fmt.Errorf("failed to watch directory: %w", err)
+	}
+
+	err = filepath.Walk(cfg.ExeDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			log.Println("Error walking path:", err)
 			return nil
 		}
 		if info.IsDir() {
-			if !containsIgnorePath(subpath, "__pycache__") {
-				err := watcher.Add(subpath)
-				if err != nil {
-					log.Println("Error adding subdirectory to watcher:", err)
+			if !cfg.ShouldIgnore(path) {
+				if err := w.Add(path); err != nil {
+					log.Println("Error adding directory to watcher:", err)
 				}
 			}
 		}
@@ -134,101 +137,80 @@ func WatchPath(watcher *fsnotify.Watcher, path string, bootFile string) {
 	go func() {
 		for {
 			select {
-			case event, ok := <-watcher.Events:
+			case event, ok := <-w.Events:
 				if !ok {
 					return
 				}
 				if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove) != 0 {
-					if !containsIgnorePath(event.Name, "__pycache__") {
-						log.Println("event", event.Name)
-
-						// Run the app in a separate goroutine.
-						go RunApp(bootFile)
+					if !cfg.ShouldIgnore(event.Name) && cfg.ShouldWatch(event.Name) {
+						log.Printf("Change detected: %s", event.Name)
+						runner.RunApp()
 					}
 				}
-
-			case err, ok := <-watcher.Errors:
+			case err, ok := <-w.Errors:
 				if !ok {
 					return
 				}
-				log.Println("Error:", err)
+				log.Println("Watcher error:", err)
 			}
 		}
 	}()
+
+	return nil
 }
 
-func containsIgnorePath(path, ignorePath string) bool {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		fmt.Println("Error getting absolute path:", err)
-		return false
+func WatchPolling(cfg *config.Config, runner *AppRunner) error {
+	w := watcher.New()
+	w.SetMaxEvents(1)
+	w.FilterOps(watcher.Write, watcher.Create, watcher.Remove)
+
+	if err := w.AddRecursive(cfg.ExeDir); err != nil {
+		return fmt.Errorf("failed to add directory to watcher: %w", err)
 	}
 
-	absIgnorePath, err := filepath.Abs(ignorePath)
-	if err != nil {
-		fmt.Println("Error getting absolute ignore path:", err)
-		return false
+	for path := range w.WatchedFiles() {
+		if cfg.ShouldIgnore(path) {
+			w.Remove(path)
+		}
 	}
 
-	return strings.HasPrefix(absPath, absIgnorePath)
+	go func() {
+		for {
+			select {
+			case event := <-w.Event:
+				if !cfg.ShouldIgnore(event.Path) && cfg.ShouldWatch(event.Path) {
+					log.Printf("Change detected: %s", event.Path)
+					runner.RunApp()
+				}
+			case err := <-w.Error:
+				log.Println("Watcher error:", err)
+			case <-w.Closed:
+				return
+			}
+		}
+	}()
+
+	go func() {
+		if err := w.Start(time.Second); err != nil {
+			log.Printf("Watcher start error: %v", err)
+		}
+	}()
+
+	return nil
 }
 
-// check if main.py is found
 func FileExists(filePath string) (bool, error) {
 	_, err := os.Stat(filePath)
 	if err == nil {
 		return true, nil
 	} else if os.IsNotExist(err) {
 		return false, nil
-	} else {
-		return false, err
 	}
+	return false, err
 }
 
-// check if python is installed
-func IsPythonInstalled() bool {
-	cmd := exec.Command("python", "--version")
+func IsPythonInstalled(pythonCmd string) bool {
+	cmd := exec.Command(pythonCmd, "--version")
 	err := cmd.Run()
 	return err == nil
-}
-
-// used for checking if a custom boot file is present
-func CustomBootFileDefined() (fileName string, isDefined bool) {
-	hasInitFile, hasInitFileErr := FileExists("watcher.ini")
-
-	if hasInitFileErr != nil {
-		log.Printf("error checking for init file: watcher.ini. %s", hasInitFileErr.Error())
-		return "", false
-	} else {
-		if hasInitFile {
-			file, fileErr := os.ReadFile("watcher.ini")
-
-			if fileErr != nil {
-				log.Printf("error opening watcher.ini. %s", fileErr.Error())
-				return "", false
-			} else {
-				data := strings.TrimSpace(string(file))
-				if len(data) > 0 {
-					extension := getLastNCharacters(data, 3)
-					if extension == ".py" {
-						return data, true
-					}
-					return "", false
-				}
-				return "", false
-			}
-		} else {
-			return "", false
-		}
-	}
-}
-
-// used for handling extensions
-func getLastNCharacters(s string, n int) string {
-	if n > len(s) {
-		n = len(s)
-	}
-
-	lastN := s[len(s)-n:]
-	return lastN
 }

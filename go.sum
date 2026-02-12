@@ -1,3 +1,5 @@
+github.com/alexanderthegreat96/envparser/v3 v3.0.0 h1:GZ6iNIvorj107k/0s2379aEaziYfv46bBmCIOYRj9Ls=
+github.com/alexanderthegreat96/envparser/v3 v3.0.0/go.mod h1:aSSV/ysB2ej4CE6AgqvM8fR64lkRVveCD1jT5AZKx3I=
 github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be h1:J5BL2kskAlV9ckgEsNQXscjIaLiOYiZ75d4e94E6dcQ=
 github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be/go.mod h1:mk5IQ+Y0ZeO87b858TlA645sVcEcbiX6YqP98kt+7+w=
 github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nosvA=
