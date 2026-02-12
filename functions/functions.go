@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/alexanderthegreat96/nadeshot-watcher/config"
@@ -23,6 +22,7 @@ type AppRunner struct {
 	mu           sync.Mutex
 	ctx          context.Context
 	cancel       context.CancelFunc
+	cmd          *exec.Cmd
 	isRunning    bool
 	lastRestart  time.Time
 	shutdownOnce sync.Once
@@ -42,10 +42,20 @@ func (r *AppRunner) RunApp() {
 		return
 	}
 
-	if r.isRunning && r.cancel != nil {
+	if r.isRunning && r.cmd != nil && r.cmd.Process != nil {
 		log.Println("Restarting the previous app instance...")
-		r.cancel()
-		time.Sleep(100 * time.Millisecond)
+
+		// Cancel context first to signal the process to stop
+		if r.cancel != nil {
+			r.cancel()
+		}
+
+		// Kill the process tree
+		killProcessTree(r.cmd)
+
+		// Mark as not running
+		r.isRunning = false
+		r.cmd = nil
 	}
 
 	r.ctx, r.cancel = context.WithCancel(context.Background())
@@ -68,6 +78,14 @@ func (r *AppRunner) runProcess() {
 	cmd.Stderr = os.Stderr
 	cmd.Dir = r.cfg.ExeDir
 
+	// Set platform-specific process attributes for process tree management
+	setPlatformProcessAttrs(cmd)
+
+	// Store cmd reference for process tree killing
+	r.mu.Lock()
+	r.cmd = cmd
+	r.mu.Unlock()
+
 	err := cmd.Run()
 	if err != nil {
 		if r.ctx.Err() == nil {
@@ -79,6 +97,7 @@ func (r *AppRunner) runProcess() {
 
 	r.mu.Lock()
 	r.isRunning = false
+	r.cmd = nil
 	r.mu.Unlock()
 }
 
@@ -87,8 +106,11 @@ func (r *AppRunner) Shutdown() {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 
+		log.Println("Shutting down application...")
+		if r.cmd != nil && r.cmd.Process != nil {
+			killProcessTree(r.cmd)
+		}
 		if r.cancel != nil {
-			log.Println("Shutting down application...")
 			r.cancel()
 		}
 	})
@@ -96,7 +118,7 @@ func (r *AppRunner) Shutdown() {
 
 func (r *AppRunner) SetupSignalHandler() {
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, os.Interrupt)
 
 	go func() {
 		sig := <-sigChan

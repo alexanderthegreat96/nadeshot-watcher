@@ -18,7 +18,7 @@ func main() {
 	}
 	exeDir := filepath.Dir(exePath)
 
-	myFigure := figure.NewColorFigure("Nadeshot Watcher", "", "green", true)
+	myFigure := figure.NewColorFigure("nWatcher", "", "green", true)
 	myFigure.Print()
 	fmt.Println()
 
