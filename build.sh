@@ -24,7 +24,7 @@ for PLATFORM in "${PLATFORMS[@]}"
 do
   OS=$(echo $PLATFORM | cut -d'/' -f1)
   ARCH=$(echo $PLATFORM | cut -d'/' -f2)
-  OUTPUT_NAME=$OUTPUT_DIR/mongo-db-api-$OS-$ARCH-$TIMESTAMP
+  OUTPUT_NAME=$OUTPUT_DIR/watcher-$OS-$ARCH-$TIMESTAMP
 
   if [ $OS = "windows" ]; then
     OUTPUT_NAME+='.exe'
