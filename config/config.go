@@ -41,6 +41,49 @@ func DefaultConfig() *Config {
 	}
 }
 
+func CreateConfigFileIfNotExists(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+
+		configSample := []byte(`# Nadeshot Watcher Configuration
+# Uses ENV syntax (KEY=VALUE)
+
+# Mode: "regular" for native filesystem events (Linux/Windows/macOS)
+#       "docker" for polling-based watching (Docker/network filesystems)
+MODE=regular
+
+# Python script to run (must end with .py)
+BOOT_FILE=main.py
+
+# Python interpreter command (e.g., python, python3, /path/to/venv/bin/python)
+PYTHON=python
+
+# Arguments for the Python interpreter (list syntax)
+# Common flags: -B (no bytecode), -u (unbuffered output), -O (optimized)
+PYTHON_ARGS=[-B]
+
+# Arguments passed to your Python script (list syntax)
+# Example: SCRIPT_ARGS=[--debug, --port, 8080]
+SCRIPT_ARGS=[]
+
+# Cooldown period in milliseconds between restarts
+# Prevents rapid-fire restarts when saving multiple files quickly
+DEBOUNCE_MS=500
+
+# Directories/files to ignore (comma-separated list in brackets)
+# Changes in these paths won't trigger a restart
+IGNORE=[__pycache__, .git, .venv, venv, node_modules, .idea, .vscode]
+
+# File extensions to watch (comma-separated list in brackets)
+# Only changes to files with these extensions will trigger a restart
+WATCH_EXTENSIONS=[.py]
+
+    	`)
+
+		return os.WriteFile(path, configSample, 0o644)
+	}
+	return nil
+}
+
 func LoadConfig(exeDir string) (*Config, error) {
 	cfg := DefaultConfig()
 	cfg.ExeDir = exeDir
@@ -55,6 +98,10 @@ func LoadConfig(exeDir string) (*Config, error) {
 				cfg.ExeDir = cwd
 			}
 		}
+	}
+	fmt.Println("reached here")
+	if err := CreateConfigFileIfNotExists(configPath); err != nil {
+		return nil, fmt.Errorf("failed to ensure config exists: %w", err)
 	}
 
 	env := envparser.NewEnvParser(configPath, false)
