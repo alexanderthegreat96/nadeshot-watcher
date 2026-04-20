@@ -99,7 +99,7 @@ func LoadConfig(exeDir string) (*Config, error) {
 			}
 		}
 	}
-	fmt.Println("reached here")
+
 	if err := CreateConfigFileIfNotExists(configPath); err != nil {
 		return nil, fmt.Errorf("failed to ensure config exists: %w", err)
 	}
