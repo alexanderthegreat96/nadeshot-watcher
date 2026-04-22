@@ -10,27 +10,6 @@ import (
 	"github.com/common-nighthawk/go-figure"
 )
 
-func printUsage() {
-	if len(os.Args) > 1 && os.Args[1] == "--help" {
-		helpText := `
-Usage: nadeshot-watcher [OPTIONS]
-
-Python real-time application watcher and restarter.
-
-Options:
-  -h, --help          Show this screen.
-  -p, --path <path>   Path to the directory containing watcher.ini.
-                      (Defaults to the current executable directory)
-
-Notes:
-  If no path is provided, the program looks for 'watcher.ini' in the 
-  same folder as the nadeshot-watcher binary.
-
-		`
-		fmt.Println(helpText)
-	}
-}
-
 func main() {
 	// divert execution
 	// for standalone mode
@@ -141,6 +120,34 @@ func main() {
 
 	runner.RunApp()
 	select {}
+}
+
+func printUsage() {
+	path, err := os.Executable()
+	if err != nil {
+		fmt.Println("Error getting executable path:", err)
+		return
+	}
+	fileName := filepath.Base(path)
+
+	if len(os.Args) > 1 && os.Args[1] == "--help" {
+		helpText := `
+Usage: %s [OPTIONS]
+
+Python real-time application watcher and restarter.
+
+Options:
+  -h, --help          Show this screen.
+  -p, --path <path>   Path to the directory containing watcher.ini.
+                      (Defaults to the current executable directory)
+
+Notes:
+  If no path is provided, the program looks for 'watcher.ini' in the 
+  same folder as the %s binary.
+  
+		`
+		fmt.Printf(helpText, fileName, fileName)
+	}
 }
 
 func waitForExit() {
