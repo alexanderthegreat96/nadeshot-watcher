@@ -90,6 +90,10 @@ func LoadConfig(exeDir string) (*Config, error) {
 
 	configPath := filepath.Join(exeDir, "watcher.ini")
 
+	if err := CreateConfigFileIfNotExists(configPath); err != nil {
+		return nil, fmt.Errorf("failed to ensure config exists: %w", err)
+	}
+
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
 			cwdConfigPath := filepath.Join(cwd, "watcher.ini")
@@ -98,10 +102,6 @@ func LoadConfig(exeDir string) (*Config, error) {
 				cfg.ExeDir = cwd
 			}
 		}
-	}
-
-	if err := CreateConfigFileIfNotExists(configPath); err != nil {
-		return nil, fmt.Errorf("failed to ensure config exists: %w", err)
 	}
 
 	env := envparser.NewEnvParser(configPath, false)

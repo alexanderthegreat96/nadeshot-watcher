@@ -127,7 +127,7 @@ func WatchRegular(cfg *config.Config, runner *AppRunner) error {
 		return fmt.Errorf("failed to create watcher: %w", err)
 	}
 
-	if err := w.Add(cfg.ExeDir); err != nil {
+	if err = w.Add(cfg.ExeDir); err != nil {
 		return fmt.Errorf("failed to watch directory: %w", err)
 	}
 
