@@ -18,12 +18,21 @@ A single binary that aids with real-time Python development by automatically res
 | **Script Arguments** | Pass arguments to your Python script |
 | **Extension Filtering** | Only watch specific file types (`.py` by default) |
 | **Ignore Patterns** | Exclude directories like `__pycache__`, `.git`, `node_modules` |
+| **Support for custom paths**| Store the executable anywhere and point it towards your python project using --path |
 
 ## 🚀 Quick Start
 
 1. Download or build the `watcher` binary
 2. Place it in your Python project directory (alongside `main.py`)
 3. Run `./watcher`
+
+## 🚀 Quick Start Using Custom Paths
+1. Download the binary
+2. Store it anywhere you want
+3. Optionally, create an alias in your terminal
+4. Run: `watcher --path <your-project-path>`
+5. The watcher will create a `watcher.ini` file in your project directory, which you can modify later
+6. That's it. This method ensures that for some projects you can use a single binary to do the same thing, while, for other complex projects requiring all the dev deps to be in the same folder, you can store the binary there.
 
 That's it! The watcher will start your `main.py` and restart it whenever you save changes.
 
