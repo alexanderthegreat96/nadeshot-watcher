@@ -10,17 +10,83 @@ import (
 	"github.com/common-nighthawk/go-figure"
 )
 
-func main() {
-	exePath, err := os.Executable()
-	if err != nil {
-		fmt.Printf("Error getting executable path: %s\n", err)
-		return
-	}
-	exeDir := filepath.Dir(exePath)
+func printUsage() {
+	if len(os.Args) > 1 && os.Args[1] == "--help" {
+		helpText := `
+Usage: nadeshot-watcher [OPTIONS]
 
+Python real-time application watcher and restarter.
+
+Options:
+  -h, --help          Show this screen.
+  -p, --path <path>   Path to the directory containing watcher.ini.
+                      (Defaults to the current executable directory)
+
+Notes:
+  If no path is provided, the program looks for 'watcher.ini' in the 
+  same folder as the nadeshot-watcher binary.
+
+		`
+		fmt.Println(helpText)
+	}
+}
+
+func main() {
+	// divert execution
+	// for standalone mode
+	// we want to be able to make use of a different path
+	// provide --path=whatever-path-you-want
+	// or default which starts with this current exe
 	myFigure := figure.NewColorFigure("nWatcher", "", "green", true)
 	myFigure.Print()
 	fmt.Println()
+
+	args := os.Args[1:]
+
+	var exeDir string
+	if len(args) == 0 {
+		// no path provided
+		// use the path of the current executable
+		exePath, err := os.Executable()
+		if err != nil {
+			fmt.Printf("Error getting executable path: %s\n", err)
+			return
+		}
+
+		exeDir = filepath.Dir(exePath)
+
+	} else {
+		switch args[0] {
+		case "--help", "-h":
+			printUsage()
+			return
+
+		case "--path", "-p":
+			if len(args) < 2 {
+				fmt.Println("Error: --path requires a directory argument.")
+				printUsage()
+				os.Exit(1)
+			}
+			exeDir = args[1]
+
+			if _, err := os.Stat(exeDir); os.IsNotExist(err) {
+				fmt.Printf("Path: [%s] DOES NOT EXIST! Wrong path maybe?\n", exeDir)
+				os.Exit(1)
+			}
+
+			fmt.Printf("Using Custom Watcher Path: %s\n", exeDir)
+
+		default:
+			fmt.Printf("Unknown argument: %s\n", args[0])
+			printUsage()
+			os.Exit(1)
+		}
+	}
+
+	if exeDir == "" {
+		fmt.Println("No executable path provided. Exiting...")
+		return
+	}
 
 	cfg, err := config.LoadConfig(exeDir)
 	if err != nil {
@@ -29,11 +95,11 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Config: %s\n\n", cfg)
+	fmt.Println(cfg)
 
 	if !functions.IsPythonInstalled(cfg.PythonCommand) {
 		fmt.Printf("Python interpreter '%s' not found.\n", cfg.PythonCommand)
-		fmt.Println("Please install Python or update the PYTHON setting in watcher.ini")
+		fmt.Printf("Please install Python or update the PYTHON setting in %s/watcher.ini\n", exeDir)
 		waitForExit()
 		return
 	}
@@ -46,7 +112,7 @@ func main() {
 	}
 	if !found {
 		fmt.Printf("Boot file not found: %s\n", cfg.BootFilePath())
-		fmt.Println("Create the file or update BOOT_FILE in watcher.ini")
+		fmt.Printf("Create the file or update BOOT_FILE in %s/watcher.ini\n", exeDir)
 		waitForExit()
 		return
 	}
